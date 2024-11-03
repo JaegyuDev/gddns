@@ -1,0 +1,15 @@
+[Unit]
+Description=gddns service
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/gddns
+Restart=on-failure
+User=nobody
+Group=nogroup
+WorkingDirectory=/etc/gddns/
+StandardOutput=syslog
+StandardError=syslog
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,6 @@
+{
+    "domain": "domain.tld",
+    "cname": "cn1",
+    "zone_id": "your-zone-here",
+    "record_id": "recordID-here-or-blank"
+}
