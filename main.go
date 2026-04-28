@@ -170,7 +170,7 @@ func createRecords(api *cloudflare.API, config *Config) error {
         cloudflare.ZoneIdentifier(config.ZoneID),
         cloudflare.CreateDNSRecordParams{
             Type: "SRV",
-            Name: "_minecraft._tcp",
+            Name: "_minecraft._tcp." + config.CNAME,
             Data: map[string]interface{}{
                 "service":  "_minecraft",
                 "proto":    "_tcp",
