@@ -6,8 +6,8 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/gddns
-User=nobody
-Group=nogroup
+User=gddns
+Group=gddns
 WorkingDirectory=/etc/gddns/
 StandardOutput=journal
 StandardError=journal
