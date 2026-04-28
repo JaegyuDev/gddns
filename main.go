@@ -9,6 +9,7 @@ import (
     "net/http"
     "os"
     "path/filepath"
+    "strings"
     "time"
 
     cloudflare "github.com/cloudflare/cloudflare-go"
@@ -31,21 +32,45 @@ type Config struct {
 }
 
 type CfgFile struct {
-    Domain   string `json:"domain"`
-    CNAME    string `json:"cname"`
-    ZoneID   string `json:"zone_id"`
-    RecordID string `json:"record_id"`
-    LastIP   string `json:"last_ip,omitempty"`
+    Domain     string `json:"domain"`
+    CNAME      string `json:"cname"`
+    ZoneID     string `json:"zone_id"`
+    RecordID   string `json:"record_id"`
+    LastIP     string `json:"last_ip,omitempty"`
+    PreferIPv6 bool   `json:"prefer_ipv6"`
 }
 
-func getPublicIP() (string, error) {
-    resp, err := http.Get("https://api.ipify.org?format=text")
+// recordType returns the DNS record type appropriate for the resolved IP.
+// IPv6 addresses contain colons; everything else is treated as IPv4.
+func (c *Config) recordType() string {
+    if strings.Contains(c.Env.SysIP, ":") {
+        return "AAAA"
+    }
+    return "A"
+}
+
+func fetchIP(url string) (string, error) {
+    resp, err := http.Get(url)
     if err != nil {
         return "", err
     }
     defer resp.Body.Close()
     ip, err := io.ReadAll(resp.Body)
-    return string(ip), err
+    return strings.TrimSpace(string(ip)), err
+}
+
+// resolvePublicIP attempts to get the public IP according to the PreferIPv6
+// setting. If IPv6 is preferred but unavailable, it falls back to IPv4 and
+// logs a warning. If IPv4 is preferred, it is used directly with no fallback.
+func resolvePublicIP(preferIPv6 bool) (string, error) {
+    if preferIPv6 {
+        ip, err := fetchIP("https://api6.ipify.org?format=text")
+        if err == nil {
+            return ip, nil
+        }
+        fmt.Printf("Warning: IPv6 lookup failed (%v), falling back to IPv4.\n", err)
+    }
+    return fetchIP("https://api.ipify.org?format=text")
 }
 
 func loadConfigAndEnv(filename string) (*Config, error) {
@@ -66,7 +91,7 @@ func loadConfigAndEnv(filename string) (*Config, error) {
         return nil, fmt.Errorf("CF_API_KEY and CF_EMAIL must be set in environment")
     }
 
-    ip, err := getPublicIP()
+    ip, err := resolvePublicIP(config.PreferIPv6)
     if err != nil {
         return nil, fmt.Errorf("error getting public IP: %w", err)
     }
@@ -86,7 +111,7 @@ func saveConfig(config *Config) error {
 func updateRecord(api *cloudflare.API, config *Config) error {
     recordParams := cloudflare.UpdateDNSRecordParams{
         ID:      config.RecordID,
-        Type:    "A",
+        Type:    config.recordType(),
         Name:    config.CNAME,
         Content: config.Env.SysIP,
         TTL:     120,
@@ -97,15 +122,15 @@ func updateRecord(api *cloudflare.API, config *Config) error {
     return err
 }
 
-// findRecord checks whether an A record already exists for the CNAME.
-// If one is found, it populates config.RecordID so the caller can update
-// rather than re-create the record.
+// findRecord checks whether a matching record (A or AAAA depending on the
+// resolved IP) already exists for the CNAME. If one is found, it populates
+// config.RecordID so the caller can update rather than re-create the record.
 func findRecord(api *cloudflare.API, config *Config) (bool, error) {
     records, _, err := api.ListDNSRecords(
         context.Background(),
         cloudflare.ZoneIdentifier(config.ZoneID),
         cloudflare.ListDNSRecordsParams{
-            Type: "A",
+            Type: config.recordType(),
             Name: config.CNAME,
         },
     )
@@ -128,7 +153,7 @@ func createRecords(api *cloudflare.API, config *Config) error {
         context.Background(),
         cloudflare.ZoneIdentifier(config.ZoneID),
         cloudflare.CreateDNSRecordParams{
-            Type:    "A",
+            Type:    config.recordType(),
             Name:    config.CNAME,
             Content: config.Env.SysIP,
             TTL:     300,
@@ -137,7 +162,7 @@ func createRecords(api *cloudflare.API, config *Config) error {
         },
     )
     if err != nil {
-        return fmt.Errorf("error creating A record: %w", err)
+        return fmt.Errorf("error creating %s record: %w", config.recordType(), err)
     }
 
     _, err = api.CreateDNSRecord(
