@@ -1,15 +1,13 @@
 [Unit]
-Description=gddns service
-After=network.target
+Description=gddns dynamic DNS update
+After=network-online.target
+Wants=network-online.target
 
 [Service]
+Type=oneshot
 ExecStart=/usr/local/bin/gddns
-Restart=on-failure
 User=nobody
 Group=nogroup
 WorkingDirectory=/etc/gddns/
-StandardOutput=syslog
-StandardError=syslog
-
-[Install]
-WantedBy=multi-user.target
+StandardOutput=journal
+StandardError=journal
